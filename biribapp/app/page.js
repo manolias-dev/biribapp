@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Plus, Users, Trophy, Trash2, ChevronRight, X, Check, ArrowLeft, Crown, Calendar, Sparkles, Camera, Edit3, LogOut, TrendingUp, Zap, MapPin, DoorOpen, Layers } from "lucide-react";
+import { Plus, Minus, User, Users, Trophy, Trash2, ChevronRight, X, Check, ArrowLeft, Crown, Calendar, Sparkles, Camera, Edit3, LogOut, TrendingUp, Zap, MapPin, DoorOpen, Layers } from "lucide-react";
 
 /* ============ API HELPERS ============ */
 const api = {
@@ -154,13 +154,64 @@ function CardWatermarks() {
 }
 
 /* ============ SCORING / DATE HELPERS ============ */
+/* ---- Biriba scoring rules ---- */
+export const SCORING = {
+  CLEAN_BIRIBA: 200,
+  DIRTY_BIRIBA: 100,
+  FULL_DECK_BIRIBA: 1000,
+  OUT_FIRST: 100,
+  NO_BIRIBAKI: -100,
+};
+
+/** True if this score entry uses the old three-number shape. */
+function isLegacyScore(s) {
+  return s && (s.biriba !== undefined || s.outcome !== undefined || s.deck !== undefined);
+}
+
+/** Points earned from biriba counts alone. */
+function biribaPoints(s) {
+  if (!s) return 0;
+  if (isLegacyScore(s)) return s.biriba || 0;
+  return (s.cleanBiriba || 0) * SCORING.CLEAN_BIRIBA
+       + (s.dirtyBiriba || 0) * SCORING.DIRTY_BIRIBA
+       + (s.fullDeckBiriba || 0) * SCORING.FULL_DECK_BIRIBA;
+}
+
+/** Net of the out-first bonus and the no-birib\u00e1ki penalty. */
+function bonusPoints(s) {
+  if (!s) return 0;
+  if (isLegacyScore(s)) return s.outcome || 0;
+  let v = 0;
+  if (s.outFirst) v += SCORING.OUT_FIRST;
+  if (s.noBiribaki) v += SCORING.NO_BIRIBAKI;
+  return v;
+}
+
+/** Cards left in hand — stored already negative. */
+function handPoints(s) {
+  if (!s || isLegacyScore(s)) return 0;
+  return s.handPoints || 0;
+}
+
+/** Cards counted in the deck the team took. */
+function deckPoints(s) {
+  if (!s) return 0;
+  if (isLegacyScore(s)) return s.deck || 0;
+  return s.deckPoints || 0;
+}
+
+/** One team's total for one round. Handles both old and new score shapes. */
+function roundTeamTotal(s) {
+  if (!s) return 0;
+  return biribaPoints(s) + bonusPoints(s) + handPoints(s) + deckPoints(s);
+}
+
 function computeTotals(game) {
   const t = {};
   (game.teams || []).forEach(team => { t[team.id] = 0; });
   (game.rounds || []).forEach(r => {
     Object.keys(r.scores || {}).forEach(tid => {
-      const s = r.scores[tid] || {};
-      t[tid] = (t[tid] || 0) + (s.biriba || 0) + (s.outcome || 0) + (s.deck || 0);
+      t[tid] = (t[tid] || 0) + roundTeamTotal(r.scores[tid]);
     });
   });
   return t;
@@ -661,7 +712,8 @@ function App({ onLogout }) {
             {view === "newGame" && <NewGameView room={selectedRoom} {...shared} />}
             {view === "game" && currentGame && <GameView game={currentGame} {...shared} />}
             {view === "gameDetail" && selectedGameId && <GameDetailView game={games.find(g => g.id === selectedGameId)} {...shared} />}
-            {view === "roster" && <RosterView {...shared} />}
+            {view === "players" && <RosterView initialTab="players" {...shared} />}
+            {view === "teams" && <RosterView initialTab="teams" {...shared} />}
             {view === "playerStats" && selectedPlayerId && <PlayerStatsView player={players.find(p => p.id === selectedPlayerId)} {...shared} />}
             {view === "teamStats" && selectedTeamId && <TeamStatsView team={teams.find(t => t.id === selectedTeamId)} {...shared} />}
             {view === "history" && <HistoryView {...shared} />}
@@ -696,9 +748,12 @@ function HomeView({ players, rooms, games, setView, setSelectedRoomId, setCurren
           <span className="flex items-center gap-2.5"><Sparkles size={15} /> new room</span>
           <ChevronRight size={16} />
         </button>
-        <div className="grid grid-cols-2 gap-2">
-          <button onClick={() => setView("roster")} className="btn-ghost mono-font py-3 rounded flex items-center justify-center gap-2 text-xs font-medium uppercase tracking-wider">
-            <Users size={14} /> roster
+        <div className="grid grid-cols-3 gap-2">
+          <button onClick={() => setView("players")} className="btn-ghost mono-font py-3 rounded flex items-center justify-center gap-2 text-xs font-medium uppercase tracking-wider">
+            <User size={14} /> players
+          </button>
+          <button onClick={() => setView("teams")} className="btn-ghost mono-font py-3 rounded flex items-center justify-center gap-2 text-xs font-medium uppercase tracking-wider">
+            <Users size={14} /> teams
           </button>
           <button onClick={() => setView("history")} className="btn-ghost mono-font py-3 rounded flex items-center justify-center gap-2 text-xs font-medium uppercase tracking-wider">
             <Trophy size={14} /> history
@@ -1278,16 +1333,21 @@ function GameView({ game, rooms, setGames, setView, setSelectedRoomId, players, 
                   </div>
                   <div className="space-y-2">
                     {(game.teams || []).map(t => {
-                      const s = r.scores?.[t.id] || { biriba: 0, outcome: 0, deck: 0 };
-                      const sum = (s.biriba || 0) + (s.outcome || 0) + (s.deck || 0);
+                      const s = r.scores?.[t.id];
+                      const sum = roundTeamTotal(s);
+                      const b = biribaPoints(s), bonus = bonusPoints(s), hand = handPoints(s), deck = deckPoints(s);
                       return (
-                        <div key={t.id} className="flex items-center justify-between text-sm">
-                          <span className="display-font text-xl truncate flex-shrink min-w-0 mr-2" style={{ color: "rgba(245,233,207,0.95)" }}>{t.name}</span>
-                          <div className="flex items-center gap-1.5 mono-font text-[11px] flex-shrink-0">
-                            <ScoreChip label="B" value={s.biriba || 0} variant="emerald" />
-                            <ScoreChip label="O" value={s.outcome || 0} variant="cream" />
-                            <ScoreChip label="D" value={s.deck || 0} variant="gold" />
-                            <span className="stat-num text-xl ml-1" style={{ color: "#F5E9CF", minWidth: 40, textAlign: "right" }}>{sum}</span>
+                        <div key={t.id} className="flex items-start justify-between text-sm gap-2">
+                          <span className="display-font text-xl truncate flex-shrink min-w-0" style={{ color: "rgba(245,233,207,0.95)" }}>{t.name}</span>
+                          <div className="flex items-center gap-1.5 mono-font text-[11px] flex-shrink-0 flex-wrap justify-end">
+                            {b !== 0 && <ScoreChip label="B" value={b} variant="emerald" />}
+                            {bonus !== 0 && <ScoreChip label="O" value={bonus} variant="cream" />}
+                            {hand !== 0 && <ScoreChip label="H" value={hand} variant="rose" />}
+                            {deck !== 0 && <ScoreChip label="D" value={deck} variant="gold" />}
+                            {b === 0 && bonus === 0 && hand === 0 && deck === 0 && (
+                              <span style={{ color: "rgba(201,185,143,0.35)" }}>—</span>
+                            )}
+                            <span className="stat-num text-xl ml-1" style={{ color: sum < 0 ? "#FB7185" : "#F5E9CF", minWidth: 44, textAlign: "right" }}>{sum}</span>
                           </div>
                         </div>
                       );
@@ -1308,6 +1368,7 @@ function ScoreChip({ label, value, variant }) {
     emerald: { bg: "rgba(34,197,94,0.12)", text: "#86EFAC", border: "rgba(34,197,94,0.3)" },
     cream: { bg: "rgba(245,233,207,0.08)", text: "#F5E9CF", border: "rgba(245,233,207,0.2)" },
     gold: { bg: "rgba(212,175,55,0.12)", text: "#F4CD5C", border: "rgba(212,175,55,0.35)" },
+    rose: { bg: "rgba(122,31,43,0.2)", text: "#FB7185", border: "rgba(184,49,63,0.45)" },
   };
   const c = variants[variant];
   return (
@@ -1318,61 +1379,179 @@ function ScoreChip({ label, value, variant }) {
 }
 
 /* ============ ROUND FORM ============ */
-function RoundForm({ teams, onCancel, onSubmit, roundNumber, initialScores, editing }) {
-  const initial = {};
-  (teams || []).forEach(t => {
-    const init = initialScores?.[t.id];
-    initial[t.id] = {
-      biriba: init?.biriba !== undefined ? String(init.biriba) : "",
-      outcome: init?.outcome !== undefined ? String(init.outcome) : "",
-      deck: init?.deck !== undefined ? String(init.deck) : "",
+function blankEntry() {
+  return { cleanBiriba: 0, dirtyBiriba: 0, fullDeckBiriba: 0, noBiribaki: false, handPoints: "", deckPoints: "" };
+}
+
+/** Turn a stored score entry into editable form state. */
+function entryFromScore(init) {
+  if (!init) return blankEntry();
+  if (isLegacyScore(init)) {
+    // Old rounds only kept three totals, so surface them as deck/hand numbers
+    // rather than guessing how many biribas they represented.
+    return {
+      cleanBiriba: 0, dirtyBiriba: 0, fullDeckBiriba: 0,
+      noBiribaki: (init.outcome || 0) < 0,
+      handPoints: "", deckPoints: String((init.biriba || 0) + (init.deck || 0)),
     };
-  });
-  const [scores, setScores] = useState(initial);
-  function update(teamId, field, value) {
-    setScores(prev => ({ ...prev, [teamId]: { ...prev[teamId], [field]: value } }));
   }
+  return {
+    cleanBiriba: init.cleanBiriba || 0,
+    dirtyBiriba: init.dirtyBiriba || 0,
+    fullDeckBiriba: init.fullDeckBiriba || 0,
+    noBiribaki: !!init.noBiribaki,
+    handPoints: init.handPoints ? String(Math.abs(init.handPoints)) : "",
+    deckPoints: init.deckPoints ? String(init.deckPoints) : "",
+  };
+}
+
+function Stepper({ label, points, value, onChange }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="min-w-0">
+        <div className="ui-font text-sm font-medium" style={{ color: "#F5E9CF" }}>{label}</div>
+        <div className="mono-font text-[10px]" style={{ color: "rgba(201,185,143,0.5)" }}>{points} pts each</div>
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <button type="button" onClick={() => onChange(Math.max(0, value - 1))} disabled={value === 0}
+          className="btn-ghost w-9 h-9 rounded flex items-center justify-center" aria-label={`one fewer ${label}`}>
+          <Minus size={15} />
+        </button>
+        <span className="stat-num text-2xl w-7 text-center" style={{ color: value > 0 ? "#F4CD5C" : "rgba(201,185,143,0.35)" }}>{value}</span>
+        <button type="button" onClick={() => onChange(value + 1)}
+          className="btn-gold w-9 h-9 rounded flex items-center justify-center" aria-label={`one more ${label}`}>
+          <Plus size={15} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function RoundForm({ teams, onCancel, onSubmit, roundNumber, initialScores, editing }) {
+  const list = teams || [];
+  const [entries, setEntries] = useState(() => {
+    const init = {};
+    list.forEach(t => { init[t.id] = entryFromScore(initialScores?.[t.id]); });
+    return init;
+  });
+  // Only one team goes out first; null means nobody did.
+  const [outFirstId, setOutFirstId] = useState(() => {
+    const found = list.find(t => initialScores?.[t.id]?.outFirst);
+    return found ? found.id : null;
+  });
+
+  function set(teamId, field, value) {
+    setEntries(prev => ({ ...prev, [teamId]: { ...prev[teamId], [field]: value } }));
+  }
+
+  function buildScore(teamId) {
+    const e = entries[teamId] || blankEntry();
+    const hand = Math.abs(Number(e.handPoints) || 0);
+    return {
+      cleanBiriba: e.cleanBiriba || 0,
+      dirtyBiriba: e.dirtyBiriba || 0,
+      fullDeckBiriba: e.fullDeckBiriba || 0,
+      outFirst: outFirstId === teamId,
+      noBiribaki: !!e.noBiribaki,
+      handPoints: hand === 0 ? 0 : -hand,
+      deckPoints: Number(e.deckPoints) || 0,
+    };
+  }
+
   function submit() {
     const cleaned = {};
-    Object.keys(scores).forEach(tid => {
-      cleaned[tid] = {
-        biriba: Number(scores[tid].biriba) || 0,
-        outcome: Number(scores[tid].outcome) || 0,
-        deck: Number(scores[tid].deck) || 0,
-      };
-    });
+    list.forEach(t => { cleaned[t.id] = buildScore(t.id); });
     onSubmit({ scores: cleaned });
   }
+
   return (
-    <div className="surface-deeper rounded p-5 space-y-4 fade-up">
+    <div className="surface-deeper rounded p-5 space-y-5 fade-up">
       <div className="text-center">
         <div className="section-label">// round {roundNumber}</div>
         <div className="display-font text-3xl mt-1" style={{ color: "#F5E9CF" }}>{editing ? "edit scores" : "enter scores"}</div>
       </div>
-      <div className="grid grid-cols-3 gap-2 mono-font text-[10px] uppercase tracking-[0.18em] text-center font-medium">
-        <div style={{ color: "#86EFAC" }}>biriba</div>
-        <div style={{ color: "#F5E9CF" }}>out / penalty</div>
-        <div style={{ color: "#F4CD5C" }}>deck count</div>
+
+      {/* Out-first is a round-level choice, so it lives outside the team cards */}
+      <div className="space-y-2">
+        <div className="section-label"><span className="section-prefix">//</span> who went out first? +{SCORING.OUT_FIRST}</div>
+        <div className="flex flex-wrap gap-2">
+          {list.map(t => (
+            <button key={t.id} type="button" onClick={() => setOutFirstId(t.id)}
+              className={`ui-font text-xs px-3 py-2 rounded font-medium ${outFirstId === t.id ? "chip-active" : "chip"}`}>
+              {t.name}{outFirstId === t.id && <Check size={11} className="inline ml-1.5" />}
+            </button>
+          ))}
+          <button type="button" onClick={() => setOutFirstId(null)}
+            className={`ui-font text-xs px-3 py-2 rounded font-medium ${outFirstId === null ? "chip-active" : "chip"}`}>
+            nobody
+          </button>
+        </div>
       </div>
+
       <div className="space-y-3">
-        {(teams || []).map(t => {
-          const s = scores[t.id] || { biriba: "", outcome: "", deck: "" };
-          const sum = (Number(s.biriba) || 0) + (Number(s.outcome) || 0) + (Number(s.deck) || 0);
+        {list.map(t => {
+          const e = entries[t.id] || blankEntry();
+          const preview = buildScore(t.id);
+          const total = roundTeamTotal(preview);
+          const bTotal = biribaPoints(preview);
           return (
-            <div key={t.id} className="space-y-2 pb-3 border-b last:border-0" style={{ borderColor: "rgba(212,175,55,0.1)" }}>
-              <div className="flex items-baseline justify-between">
-                <span className="display-font text-2xl" style={{ color: "#F5E9CF" }}>{t.name}</span>
-                <span className="stat-num text-2xl gold-text-bright">{sum}</span>
+            <div key={t.id} className="surface rounded p-4 space-y-3">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="display-font text-2xl truncate" style={{ color: "#F5E9CF" }}>{t.name}</span>
+                <span className="stat-num text-3xl flex-shrink-0" style={{ color: total < 0 ? "#FB7185" : "#F4CD5C" }}>
+                  {total > 0 ? "+" : ""}{total}
+                </span>
               </div>
-              <div className="grid grid-cols-3 gap-2">
-                <input type="number" value={s.biriba} onChange={e => update(t.id, "biriba", e.target.value)} placeholder="0" className="input-field px-3 py-2.5 rounded text-base text-center" />
-                <input type="number" value={s.outcome} onChange={e => update(t.id, "outcome", e.target.value)} placeholder="0" className="input-field px-3 py-2.5 rounded text-base text-center" />
-                <input type="number" value={s.deck} onChange={e => update(t.id, "deck", e.target.value)} placeholder="0" className="input-field px-3 py-2.5 rounded text-base text-center" />
+
+              <div className="space-y-2.5 pt-1">
+                <div className="section-label flex items-center justify-between">
+                  <span>biriba</span>
+                  {bTotal > 0 && <span className="stat-num text-sm" style={{ color: "#86EFAC" }}>+{bTotal}</span>}
+                </div>
+                <Stepper label="clean" points={SCORING.CLEAN_BIRIBA} value={e.cleanBiriba} onChange={v => set(t.id, "cleanBiriba", v)} />
+                <Stepper label="dirty" points={SCORING.DIRTY_BIRIBA} value={e.dirtyBiriba} onChange={v => set(t.id, "dirtyBiriba", v)} />
+                <Stepper label="clean full deck" points={SCORING.FULL_DECK_BIRIBA} value={e.fullDeckBiriba} onChange={v => set(t.id, "fullDeckBiriba", v)} />
+              </div>
+
+              <div className="flex flex-wrap gap-2 pt-1">
+                {outFirstId === t.id && (
+                  <span className="mono-font text-[10px] uppercase tracking-wider px-2.5 py-1.5 rounded font-medium"
+                    style={{ background: "rgba(212,175,55,0.12)", color: "#F4CD5C", border: "1px solid #D4AF37" }}>
+                    out first +{SCORING.OUT_FIRST}
+                  </span>
+                )}
+                <button type="button" onClick={() => set(t.id, "noBiribaki", !e.noBiribaki)}
+                  className={`mono-font text-[10px] uppercase tracking-wider px-2.5 py-1.5 rounded font-medium ${e.noBiribaki ? "" : "chip"}`}
+                  style={e.noBiribaki ? { background: "rgba(122,31,43,0.25)", color: "#FB7185", border: "1px solid rgba(184,49,63,0.6)" } : undefined}>
+                  {e.noBiribaki && <Check size={10} className="inline mr-1" />}no biribáki {SCORING.NO_BIRIBAKI}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <div className="space-y-1.5">
+                  <div className="section-label">cards in hand</div>
+                  <input type="number" inputMode="numeric" value={e.handPoints}
+                    onChange={ev => set(t.id, "handPoints", ev.target.value)} placeholder="0"
+                    className="input-field w-full px-3 py-2.5 rounded text-base text-center" />
+                  <div className="mono-font text-[10px] text-center" style={{ color: e.handPoints ? "#FB7185" : "rgba(201,185,143,0.4)" }}>
+                    {e.handPoints ? `counts as ${-Math.abs(Number(e.handPoints) || 0)}` : "always negative"}
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <div className="section-label">deck count</div>
+                  <input type="number" inputMode="numeric" value={e.deckPoints}
+                    onChange={ev => set(t.id, "deckPoints", ev.target.value)} placeholder="0"
+                    className="input-field w-full px-3 py-2.5 rounded text-base text-center" />
+                  <div className="mono-font text-[10px] text-center" style={{ color: "rgba(201,185,143,0.4)" }}>
+                    card counting
+                  </div>
+                </div>
               </div>
             </div>
           );
         })}
       </div>
+
       <div className="flex gap-2 pt-1">
         <button onClick={onCancel} className="btn-ghost mono-font flex-1 py-3 rounded text-xs font-medium uppercase tracking-wider">cancel</button>
         <button onClick={submit} className="btn-gold mono-font flex-1 py-3 rounded text-xs font-semibold uppercase tracking-[0.15em]">{editing ? "save changes" : "save round"}</button>
@@ -1431,8 +1610,8 @@ function GameDetailView({ game, rooms, players, setView, setCurrentGameId, setSe
 }
 
 /* ============ ROSTER ============ */
-function RosterView({ players, teams, setPlayers, setTeams, setSelectedPlayerId, setSelectedTeamId, setView, handleErr }) {
-  const [tab, setTab] = useState("players");
+function RosterView({ initialTab = "players", players, teams, setPlayers, setTeams, setSelectedPlayerId, setSelectedTeamId, setView, handleErr }) {
+  const [tab, setTab] = useState(initialTab);
   const [newPlayer, setNewPlayer] = useState("");
   const [newTeamName, setNewTeamName] = useState("");
   const [newTeamMembers, setNewTeamMembers] = useState([]);
