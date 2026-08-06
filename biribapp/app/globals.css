@@ -132,3 +132,22 @@ input[type="number"] { -moz-appearance: textfield; }
 
 .gold-text { color: #D4AF37; }
 .gold-text-bright { color: #F4CD5C; }
+
+/* Restriction badge — breathes so it catches the eye mid-game.
+   Uses currentColor for the glow so it picks up the badge's own tier colour. */
+@keyframes badgePulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 currentColor; opacity: 0.92; }
+  50%      { transform: scale(1.05); box-shadow: 0 0 9px 0 currentColor; opacity: 1; }
+}
+.badge-pulse {
+  animation: badgePulse 2s ease-in-out infinite;
+  will-change: transform;
+}
+/* The 90 tier is the more urgent one, so it pulses faster. */
+.badge-pulse-urgent {
+  animation: badgePulse 1.15s ease-in-out infinite;
+  will-change: transform;
+}
+@media (prefers-reduced-motion: reduce) {
+  .badge-pulse, .badge-pulse-urgent { animation: none; }
+}

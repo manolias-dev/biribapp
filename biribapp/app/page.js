@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { APP_VERSION, APP_BUILD } from "@/lib/version";
 import { Plus, Minus, User, Users, Trophy, Trash2, ChevronRight, X, Check, ArrowLeft, Crown, Calendar, Sparkles, Camera, Edit3, LogOut, TrendingUp, Zap, MapPin, DoorOpen, Layers } from "lucide-react";
 
 /* ============ API HELPERS ============ */
@@ -163,13 +164,23 @@ export const SCORING = {
   NO_BIRIBAKI: -100,
 };
 
+/** True when a game has no scoring at all — no rounds, or every round is empty.
+    Only these are safe to delete straight from the room list. */
+function gameHasNoPoints(game) {
+  const rounds = game?.rounds || [];
+  if (rounds.length === 0) return true;
+  return rounds.every(r =>
+    Object.keys(r.scores || {}).every(tid => roundTeamTotal(r.scores[tid]) === 0)
+  );
+}
+
 /** Meld restriction tier a team is on, based on their running total. */
 function restrictionFor(total) {
   if (total >= 2000) {
-    return { label: "Periorismos 90", color: "#FB7185", bg: "rgba(122,31,43,0.28)", border: "rgba(184,49,63,0.65)" };
+    return { label: "Periorismos 90", color: "#FB7185", bg: "rgba(122,31,43,0.28)", border: "rgba(184,49,63,0.65)", pulse: "badge-pulse-urgent" };
   }
   if (total >= 1000) {
-    return { label: "Periorismos 75", color: "#F7A356", bg: "rgba(146,74,16,0.25)", border: "rgba(224,132,45,0.6)" };
+    return { label: "Periorismos 75", color: "#F7A356", bg: "rgba(146,74,16,0.25)", border: "rgba(224,132,45,0.6)", pulse: "badge-pulse" };
   }
   return null;
 }
@@ -632,6 +643,9 @@ function Login({ onSuccess }) {
             {busy ? "checking..." : "unlock"}
           </button>
         </form>
+        <div className="mono-font text-[10px] text-center mt-4 tracking-[0.14em]" style={{ color: "rgba(201,185,143,0.4)" }}>
+          v{APP_VERSION}{APP_BUILD ? ` \u00b7 ${APP_BUILD}` : ""}
+        </div>
       </div>
     </div>
   );
@@ -968,6 +982,15 @@ function EditRoomView({ room, players, teams, setTeams, setRooms, setView, handl
 
 /* ============ ROOM DETAIL ============ */
 function RoomView({ room, players, games, rooms, setRooms, setGames, setView, setSelectedRoomId, setCurrentGameId, setSelectedGameId, setSelectedTeamId, handleErr }) {
+  async function deleteEmptyGame(g) {
+    if (!gameHasNoPoints(g)) return;
+    if (!confirm(`Delete "${g.name}"? It has no points recorded.`)) return;
+    try {
+      await api.send("DELETE", `/api/games/${g.id}`);
+      setGames(prev => prev.filter(x => x.id !== g.id));
+    } catch (e) { handleErr(e); }
+  }
+
   const rg = gamesInRoom(games, room.id);
   const live = rg.filter(g => !g.finished_at);
   const done = rg.filter(g => g.finished_at);
@@ -1066,8 +1089,8 @@ function RoomView({ room, players, games, rooms, setRooms, setGames, setView, se
               const totals = computeTotals(g);
               const leader = [...(g.teams || [])].sort((a, b) => (totals[b.id] || 0) - (totals[a.id] || 0))[0];
               return (
-                <button key={g.id} onClick={() => { setCurrentGameId(g.id); setView("game"); }} className="surface w-full p-4 rounded text-left flex items-center justify-between hover:border-yellow-600/40 transition">
-                  <div className="min-w-0 flex-1">
+                <div key={g.id} className="surface rounded flex items-center hover:border-yellow-600/40 transition">
+                  <button onClick={() => { setCurrentGameId(g.id); setView("game"); }} className="flex-1 min-w-0 p-4 text-left">
                     <div className="display-font text-2xl truncate" style={{ color: "#F5E9CF" }}>{g.name}</div>
                     <div className="mono-font text-[11px] mt-1 flex items-center gap-2 flex-wrap" style={{ color: "rgba(201,185,143,0.7)" }}>
                       <span>{(g.rounds?.length || 0)} rounds</span>
@@ -1075,9 +1098,16 @@ function RoomView({ room, players, games, rooms, setRooms, setGames, setView, se
                       <span>target {g.target_score}</span>
                       {leader && (<><span style={{ color: "#D4AF37" }}>·</span><span className="gold-text">{leader.name} {totals[leader.id] || 0}</span></>)}
                     </div>
-                  </div>
-                  <ChevronRight size={18} style={{ color: "#D4AF37" }} className="opacity-60 flex-shrink-0" />
-                </button>
+                  </button>
+                  {gameHasNoPoints(g) ? (
+                    <button onClick={() => deleteEmptyGame(g)} title="Delete — nothing scored yet"
+                      className="p-4 flex-shrink-0" style={{ color: "rgba(201,185,143,0.45)" }}>
+                      <Trash2 size={15} />
+                    </button>
+                  ) : (
+                    <div className="p-4 flex-shrink-0"><ChevronRight size={18} style={{ color: "#D4AF37" }} className="opacity-60" /></div>
+                  )}
+                </div>
               );
             })}
           </div>
@@ -1092,8 +1122,8 @@ function RoomView({ room, players, games, rooms, setRooms, setGames, setView, se
               const winner = getWinner(g);
               const totals = computeTotals(g);
               return (
-                <button key={g.id} onClick={() => { setSelectedGameId(g.id); setView("gameDetail"); }} className="surface w-full p-3.5 rounded text-left flex items-center justify-between hover:border-yellow-600/40 transition">
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div key={g.id} className="surface rounded flex items-center hover:border-yellow-600/40 transition">
+                  <button onClick={() => { setSelectedGameId(g.id); setView("gameDetail"); }} className="flex items-center gap-3 min-w-0 flex-1 p-3.5 text-left">
                     <div className="flex-shrink-0 w-9 h-9 rounded flex items-center justify-center" style={{ background: "rgba(212,175,55,0.12)", border: "1px solid #D4AF37" }}>
                       <Crown size={14} style={{ color: "#F4CD5C" }} />
                     </div>
@@ -1101,9 +1131,16 @@ function RoomView({ room, players, games, rooms, setRooms, setGames, setView, se
                       <div className="display-font text-lg truncate" style={{ color: "#F5E9CF" }}>{g.name}</div>
                       <div className="mono-font text-[10px] mt-0.5" style={{ color: "rgba(201,185,143,0.6)" }}>{formatShortDate(g.created_at)} · {winner?.name} won</div>
                     </div>
-                  </div>
-                  <div className="stat-num text-xl flex-shrink-0 ml-2 gold-text-bright">{totals[winner?.id] || 0}</div>
-                </button>
+                  </button>
+                  {gameHasNoPoints(g) ? (
+                    <button onClick={() => deleteEmptyGame(g)} title="Delete — nothing scored yet"
+                      className="p-3.5 flex-shrink-0" style={{ color: "rgba(201,185,143,0.45)" }}>
+                      <Trash2 size={15} />
+                    </button>
+                  ) : (
+                    <div className="stat-num text-xl flex-shrink-0 px-3.5 gold-text-bright">{totals[winner?.id] || 0}</div>
+                  )}
+                </div>
               );
             })}
           </div>
@@ -1277,7 +1314,7 @@ function GameView({ game, rooms, setGames, setView, setSelectedRoomId, players, 
                     <div className="display-font text-3xl truncate" style={{ color: "#F5E9CF" }}>{team.name}</div>
                     {members.length > 0 && <div className="flex -space-x-1.5 mt-0.5">{members.map(m => <Avatar key={m.id} player={m} size={16} />)}</div>}
                     {restriction && (
-                      <div className="mono-font text-[10px] uppercase tracking-wider px-2 py-1 rounded font-semibold mt-1.5 inline-block"
+                      <div className={`mono-font text-[10px] uppercase tracking-wider px-2 py-1 rounded font-semibold mt-1.5 inline-block ${restriction.pulse}`}
                         style={{ background: restriction.bg, color: restriction.color, border: `1px solid ${restriction.border}` }}>
                         {restriction.label}
                       </div>
