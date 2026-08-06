@@ -8,11 +8,10 @@ export async function GET() {
   if (r) return r;
   const { data: games, error: gErr } = await supabase
     .from("games")
-    .select("id, name, target_score, teams, created_at, finished_at")
+    .select("id, room_id, name, target_score, teams, created_at, finished_at")
     .order("created_at", { ascending: false });
   if (gErr) return Response.json({ error: gErr.message }, { status: 500 });
 
-  // Pull rounds for all games in one shot
   const ids = games.map((g) => g.id);
   let roundsByGame = {};
   if (ids.length > 0) {
@@ -22,9 +21,9 @@ export async function GET() {
       .in("game_id", ids)
       .order("at", { ascending: true });
     if (rErr) return Response.json({ error: rErr.message }, { status: 500 });
-    for (const r of rounds) {
-      if (!roundsByGame[r.game_id]) roundsByGame[r.game_id] = [];
-      roundsByGame[r.game_id].push(r);
+    for (const rd of rounds) {
+      if (!roundsByGame[rd.game_id]) roundsByGame[rd.game_id] = [];
+      roundsByGame[rd.game_id].push(rd);
     }
   }
 
@@ -38,13 +37,13 @@ export async function POST(req) {
   const body = await req.json().catch(() => ({}));
   const name = String(body.name || "").trim();
   if (!name) return Response.json({ error: "Name required" }, { status: 400 });
-  const target_score = Number(body.target_score) || 3000;
-  const teams = Array.isArray(body.teams) ? body.teams : [];
-  const { data, error } = await supabase
-    .from("games")
-    .insert({ name, target_score, teams })
-    .select()
-    .single();
+  const insert = {
+    name,
+    target_score: Number(body.target_score) || 3000,
+    teams: Array.isArray(body.teams) ? body.teams : [],
+  };
+  if (body.room_id) insert.room_id = body.room_id;
+  const { data, error } = await supabase.from("games").insert(insert).select().single();
   if (error) return Response.json({ error: error.message }, { status: 500 });
   return Response.json({ game: { ...data, rounds: [] } });
 }
