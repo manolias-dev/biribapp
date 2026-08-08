@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { APP_VERSION, APP_BUILD } from "@/lib/version";
-import { Plus, Minus, User, Users, Trophy, Trash2, ChevronRight, X, Check, ArrowLeft, Crown, Calendar, Sparkles, Camera, Edit3, LogOut, TrendingUp, Zap, MapPin, DoorOpen, Layers } from "lucide-react";
+import { Share2, Plus, Minus, User, Users, Trophy, Trash2, ChevronRight, X, Check, ArrowLeft, Crown, Calendar, Sparkles, Camera, Edit3, LogOut, TrendingUp, Zap, MapPin, DoorOpen, Layers } from "lucide-react";
 
 /* ============ API HELPERS ============ */
 const api = {
@@ -748,6 +748,51 @@ function App({ onLogout }) {
             {view === "history" && <HistoryView {...shared} />}
           </>
         )}
+
+        <AppFooter />
+      </div>
+    </div>
+  );
+}
+
+/* Footer shown inside the app: share link plus the running version, so you can
+   confirm which build a device has without logging out. */
+function AppFooter() {
+  const [note, setNote] = useState(null);
+
+  async function share() {
+    const url = typeof window !== "undefined" ? window.location.origin : "";
+    const payload = { title: "BiribAPP", text: "BiribAPP \u2014 score keeper for Biriba", url };
+    // Native share sheet where it exists (iOS/iPadOS, Android), clipboard elsewhere.
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share(payload);
+        return;
+      } catch (err) {
+        // Dismissing the sheet isn't a failure, so don't fall through to copying.
+        if (err && err.name === "AbortError") return;
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setNote("link copied");
+    } catch {
+      setNote(url);
+    }
+    setTimeout(() => setNote(null), 2400);
+  }
+
+  return (
+    <div className="mt-10 pt-5" style={{ borderTop: "1px solid rgba(212,175,55,0.15)" }}>
+      <div className="flex flex-col items-center gap-3">
+        <button onClick={share}
+          className="btn-ghost mono-font text-xs flex items-center gap-2 px-4 py-2.5 rounded font-medium uppercase tracking-[0.15em]">
+          <Share2 size={13} /> share app
+        </button>
+        {note && <div className="mono-font text-[10px] fade-up" style={{ color: "#86EFAC" }}>{note}</div>}
+        <div className="mono-font text-[10px] tracking-[0.14em]" style={{ color: "rgba(201,185,143,0.35)" }}>
+          v{APP_VERSION}{APP_BUILD ? ` \u00b7 ${APP_BUILD}` : ""}
+        </div>
       </div>
     </div>
   );
@@ -834,6 +879,17 @@ function HomeView({ players, rooms, games, setView, setSelectedRoomId, setCurren
   );
 }
 
+/* Pulsing "live" pill, used on room cards and on games in play. */
+function LiveBadge({ count, label = "live" }) {
+  return (
+    <span className="live-badge mono-font text-[10px] uppercase tracking-[0.14em] font-semibold inline-flex items-center gap-1.5 px-2 py-1 rounded"
+      style={{ background: "rgba(34,197,94,0.12)", color: "#86EFAC", border: "1px solid rgba(34,197,94,0.35)" }}>
+      <span className="live-dot" />
+      {count != null ? `${count} ${label}` : label}
+    </span>
+  );
+}
+
 function RoomCard({ room, games, players, onClick }) {
   const rg = gamesInRoom(games, room.id);
   const live = rg.filter(g => !g.finished_at);
@@ -852,14 +908,16 @@ function RoomCard({ room, games, players, onClick }) {
           )}
           <div className="mono-font text-[11px] mt-1.5 flex items-center gap-2 flex-wrap font-medium" style={{ color: "rgba(201,185,143,0.7)" }}>
             <span className="flex items-center gap-1"><Layers size={10} /> {rg.length} {rg.length === 1 ? "game" : "games"}</span>
-            {live.length > 0 && (<><span style={{ color: "#D4AF37" }}>·</span><span style={{ color: "#22C55E" }}>● {live.length} live</span></>)}
             {leader && leader.wins > 0 && (<><span style={{ color: "#D4AF37" }}>·</span><span className="gold-text">{leader.name} leads {leader.wins}</span></>)}
           </div>
           {leaderMembers.length > 0 && (
             <div className="flex -space-x-1.5 mt-1.5">{leaderMembers.map(m => <Avatar key={m.id} player={m} size={16} />)}</div>
           )}
         </div>
-        <ChevronRight size={18} style={{ color: "#D4AF37" }} className="opacity-60 flex-shrink-0 mt-1" />
+        <div className="flex items-center gap-2 flex-shrink-0 mt-0.5">
+          {live.length > 0 && <LiveBadge count={live.length} />}
+          <ChevronRight size={18} style={{ color: "#D4AF37" }} className="opacity-60" />
+        </div>
       </div>
     </button>
   );
@@ -1087,7 +1145,12 @@ function RoomView({ room, players, games, rooms, setRooms, setGames, setView, se
 
       {live.length > 0 && (
         <div className="space-y-3">
-          <div className="ornament-divider section-label"><span><span className="section-prefix">//</span> in play</span></div>
+          <div className="ornament-divider section-label">
+            <span className="flex items-center gap-2">
+              <span><span className="section-prefix">//</span> in play</span>
+              <LiveBadge count={live.length} />
+            </span>
+          </div>
           <div className="space-y-2">
             {live.map(g => {
               const totals = computeTotals(g);
@@ -1097,6 +1160,7 @@ function RoomView({ room, players, games, rooms, setRooms, setGames, setView, se
                   <button onClick={() => { setCurrentGameId(g.id); setView("game"); }} className="flex-1 min-w-0 p-4 text-left">
                     <div className="display-font text-2xl truncate" style={{ color: "#F5E9CF" }}>{g.name}</div>
                     <div className="mono-font text-[11px] mt-1 flex items-center gap-2 flex-wrap" style={{ color: "rgba(201,185,143,0.7)" }}>
+                      <LiveBadge />
                       <span>{(g.rounds?.length || 0)} rounds</span>
                       <span style={{ color: "#D4AF37" }}>·</span>
                       <span>target {g.target_score}</span>
@@ -2283,7 +2347,7 @@ function HistoryView({ players, teams, rooms, games, setView, setSelectedGameId,
                     {room && <><span className="gold-text">{room.name}</span><span style={{ color: "#D4AF37" }}>·</span></>}
                     <Calendar size={11} />{formatDate(g.created_at)}
                     <span style={{ color: "#D4AF37" }}>·</span>
-                    {g.finished_at ? <span className="flex items-center gap-1"><Crown size={11} style={{ color: "#F4CD5C" }} /> {winner?.name} ({totals[winner?.id] || 0})</span> : <span style={{ color: "#22C55E" }}>● in progress</span>}
+                    {g.finished_at ? <span className="flex items-center gap-1"><Crown size={11} style={{ color: "#F4CD5C" }} /> {winner?.name} ({totals[winner?.id] || 0})</span> : <LiveBadge label="in progress" />}
                   </div>
                 </button>
                 <button onClick={() => { if (confirm(`Delete "${g.name}"?`)) deleteGame(g.id); }} className="p-2 ml-1" style={{ color: "rgba(201,185,143,0.4)" }}><Trash2 size={14} /></button>
