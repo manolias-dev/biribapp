@@ -151,3 +151,70 @@ input[type="number"] { -moz-appearance: textfield; }
 @media (prefers-reduced-motion: reduce) {
   .badge-pulse, .badge-pulse-urgent { animation: none; }
 }
+
+/* ---- Win celebration ---- */
+@keyframes winBackdrop {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.win-backdrop {
+  background: rgba(4, 20, 12, 0.86);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: winBackdrop 0.35s ease-out forwards;
+}
+
+@keyframes winCard {
+  0%   { opacity: 0; transform: scale(0.86) translateY(14px); }
+  60%  { opacity: 1; transform: scale(1.03) translateY(0); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+.win-card {
+  animation: winCard 0.55s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  border-color: #D4AF37;
+  box-shadow: 0 0 40px rgba(212, 175, 55, 0.28);
+}
+
+/* Crown lands, then keeps a slow shine */
+@keyframes winCrown {
+  0%   { opacity: 0; transform: scale(0.3) rotate(-22deg); }
+  55%  { opacity: 1; transform: scale(1.18) rotate(6deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0deg); }
+}
+.win-crown { animation: winCrown 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+@keyframes winGlow {
+  0%, 100% { filter: drop-shadow(0 0 4px rgba(244, 205, 92, 0.5)); }
+  50%      { filter: drop-shadow(0 0 16px rgba(244, 205, 92, 0.95)); }
+}
+.win-glow { animation: winGlow 1.9s ease-in-out 0.7s infinite; }
+
+/* Name and score rise in after the card settles */
+@keyframes winRise {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.win-rise   { opacity: 0; animation: winRise 0.5s ease-out 0.3s forwards; }
+.win-rise-2 { opacity: 0; animation: winRise 0.5s ease-out 0.48s forwards; }
+.win-rise-3 { opacity: 0; animation: winRise 0.5s ease-out 0.66s forwards; }
+
+/* Card suits drifting down behind the panel */
+@keyframes suitFall {
+  0%   { opacity: 0; transform: translateY(-24px) rotate(0deg); }
+  12%  { opacity: 0.75; }
+  100% { opacity: 0; transform: translateY(240px) rotate(280deg); }
+}
+.suit-fall {
+  position: absolute;
+  animation: suitFall 2.6s linear infinite;
+  pointer-events: none;
+  user-select: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .win-card, .win-crown, .win-glow, .win-rise, .win-rise-2, .win-rise-3 {
+    animation-duration: 0.01s;
+    animation-iteration-count: 1;
+  }
+  .suit-fall { display: none; }
+}

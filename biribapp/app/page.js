@@ -1239,9 +1239,52 @@ function NewGameView({ room, players, teams, games, setTeams, setGames, setCurre
 }
 
 /* ============ GAME ============ */
+/* Shown once a team crosses the target. The game is closed automatically
+   behind this; dismissing the overlay just gets it out of the way. */
+function WinOverlay({ name, total, target, onClose }) {
+  const suits = ["\u2660", "\u2665", "\u2666", "\u2663", "\u2660", "\u2665"];
+  return (
+    <div className="fixed inset-0 flex items-center justify-center px-6 win-backdrop" style={{ zIndex: 60 }} onClick={onClose}>
+      <div className="win-card surface-deeper rounded p-8 text-center relative overflow-hidden w-full max-w-sm"
+        onClick={ev => ev.stopPropagation()}>
+        {suits.map((sym, i) => (
+          <span key={i} className="suit-fall"
+            style={{
+              left: `${8 + i * 16}%`,
+              top: 0,
+              fontSize: `${16 + (i % 3) * 7}px`,
+              color: i % 2 === 0 ? "rgba(212,175,55,0.55)" : "rgba(184,49,63,0.5)",
+              animationDelay: `${i * 0.34}s`,
+            }}>{sym}</span>
+        ))}
+
+        <div className="relative">
+          <div className="flex justify-center mb-3">
+            <Crown size={52} className="win-crown win-glow" style={{ color: "#F4CD5C" }} />
+          </div>
+          <div className="section-label win-rise">// winner</div>
+          <div className="display-font text-5xl mt-1 win-rise-2" style={{ color: "#F5E9CF" }}>{name}</div>
+          <div className="stat-num text-6xl mt-2 win-rise-2" style={{ color: "#F4CD5C" }}>{total}</div>
+          <div className="mono-font text-[11px] mt-1 win-rise-3" style={{ color: "rgba(201,185,143,0.6)" }}>
+            target was {target}
+          </div>
+          <div className="mono-font text-[10px] mt-5 uppercase tracking-[0.2em] win-rise-3" style={{ color: "rgba(201,185,143,0.45)" }}>
+            game closed
+          </div>
+          <button onClick={onClose}
+            className="btn-gold mono-font w-full py-3 rounded text-xs font-semibold uppercase tracking-[0.15em] mt-3 win-rise-3">
+            done
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function GameView({ game, rooms, setGames, setView, setSelectedRoomId, players, handleErr }) {
   const [showRoundForm, setShowRoundForm] = useState(false);
   const [editingRoundId, setEditingRoundId] = useState(null);
+  const [celebration, setCelebration] = useState(null);
   const totals = computeTotals(game);
   const sortedTeams = [...(game.teams || [])].sort((a, b) => (totals[b.id] || 0) - (totals[a.id] || 0));
   const leader = sortedTeams[0];
@@ -1251,18 +1294,41 @@ function GameView({ game, rooms, setGames, setView, setSelectedRoomId, players, 
 
   function patchGame(updater) { setGames(prev => prev.map(g => g.id === game.id ? updater(g) : g)); }
 
+  /* Called after a round is saved. If someone has reached the target, close the
+     game and celebrate. Deliberately only runs on a save, never on render, so
+     reopening a game already past the target doesn't instantly re-close it. */
+  async function closeIfWon(updatedGame) {
+    if (updatedGame.finished_at) return;
+    const totals = computeTotals(updatedGame);
+    const ranked = [...(updatedGame.teams || [])].sort((a, b) => (totals[b.id] || 0) - (totals[a.id] || 0));
+    const top = ranked[0];
+    if (!top) return;
+    const score = totals[top.id] || 0;
+    if (score < updatedGame.target_score) return;
+
+    setCelebration({ name: top.name, total: score, target: updatedGame.target_score });
+    try {
+      const r = await api.send("PATCH", `/api/games/${game.id}`, { finished_at: new Date().toISOString() });
+      patchGame(g => ({ ...g, finished_at: r.game.finished_at }));
+    } catch (e) { handleErr(e); }
+  }
+
   async function addRound(roundData) {
     try {
       const r = await api.send("POST", `/api/games/${game.id}/rounds`, roundData);
-      patchGame(g => ({ ...g, rounds: [...(g.rounds || []), r.round] }));
+      const updated = { ...game, rounds: [...(game.rounds || []), r.round] };
+      patchGame(() => updated);
       setShowRoundForm(false);
+      closeIfWon(updated);
     } catch (e) { handleErr(e); }
   }
   async function updateRound(roundId, roundData) {
     try {
       const r = await api.send("PATCH", `/api/games/${game.id}/rounds/${roundId}`, roundData);
-      patchGame(g => ({ ...g, rounds: (g.rounds || []).map(rr => rr.id === roundId ? r.round : rr) }));
+      const updated = { ...game, rounds: (game.rounds || []).map(rr => rr.id === roundId ? r.round : rr) };
+      patchGame(() => updated);
       setEditingRoundId(null);
+      closeIfWon(updated);
     } catch (e) { handleErr(e); }
   }
   async function removeRound(rid) {
@@ -1287,6 +1353,10 @@ function GameView({ game, rooms, setGames, setView, setSelectedRoomId, players, 
 
   return (
     <div className="fade-up space-y-5">
+      {celebration && (
+        <WinOverlay name={celebration.name} total={celebration.total} target={celebration.target}
+          onClose={() => setCelebration(null)} />
+      )}
       {room && (
         <button onClick={() => { setSelectedRoomId(room.id); setView("room"); }} className="mono-font text-[11px] flex items-center gap-1.5 uppercase tracking-[0.15em]" style={{ color: "rgba(212,175,55,0.8)" }}>
           <ArrowLeft size={11} /> {room.name}
@@ -1456,24 +1526,39 @@ function entryFromScore(init) {
   };
 }
 
-function Stepper({ label, points, value, onChange }) {
+function CountTile({ label, points, value, onChange }) {
+  const active = value > 0;
   return (
-    <div className="flex items-center justify-between gap-3">
-      <div className="min-w-0 flex items-baseline gap-2">
-        <span className="ui-font text-sm font-medium" style={{ color: "#F5E9CF" }}>{label}</span>
-        <span className="mono-font text-[10px]" style={{ color: "rgba(201,185,143,0.45)" }}>{points}</span>
+    <div className="rounded p-2 flex flex-col items-center gap-1.5"
+      style={{
+        background: active ? "rgba(34,197,94,0.10)" : "rgba(10,40,24,0.45)",
+        border: `1px solid ${active ? "rgba(212,175,55,0.5)" : "rgba(212,175,55,0.16)"}`,
+      }}>
+      <div className="text-center leading-tight">
+        <div className="ui-font text-[11px] font-medium whitespace-nowrap" style={{ color: "#F5E9CF" }}>{label}</div>
+        <div className="mono-font text-[9px]" style={{ color: "rgba(201,185,143,0.45)" }}>{points}</div>
       </div>
-      <div className="flex items-center gap-2 flex-shrink-0">
+      <div className="flex items-center justify-between gap-1 w-full">
         <button type="button" onClick={() => onChange(Math.max(0, value - 1))} disabled={value === 0}
-          className="btn-ghost w-9 h-9 rounded flex items-center justify-center" aria-label={`one fewer ${label}`}>
-          <Minus size={15} />
+          className="btn-ghost w-8 h-8 rounded flex items-center justify-center flex-shrink-0" aria-label={`one fewer ${label}`}>
+          <Minus size={13} />
         </button>
-        <span className="stat-num text-2xl w-7 text-center" style={{ color: value > 0 ? "#F4CD5C" : "rgba(201,185,143,0.35)" }}>{value}</span>
+        <span className="stat-num text-xl" style={{ color: active ? "#F4CD5C" : "rgba(201,185,143,0.3)" }}>{value}</span>
         <button type="button" onClick={() => onChange(value + 1)}
-          className="btn-gold w-9 h-9 rounded flex items-center justify-center" aria-label={`one more ${label}`}>
-          <Plus size={15} />
+          className="btn-gold w-8 h-8 rounded flex items-center justify-center flex-shrink-0" aria-label={`one more ${label}`}>
+          <Plus size={13} />
         </button>
       </div>
+    </div>
+  );
+}
+
+/* Header for a biriba group, with that group's running subtotal. */
+function GroupLabel({ name, subtotal }) {
+  return (
+    <div className="flex items-baseline justify-between">
+      <span className="section-label"><span className="section-prefix">//</span> {name}</span>
+      {subtotal > 0 && <span className="stat-num text-sm" style={{ color: "#86EFAC" }}>+{subtotal}</span>}
     </div>
   );
 }
@@ -1554,7 +1639,10 @@ function RoundForm({ teams, onCancel, onSubmit, roundNumber, initialScores, edit
           const e = entries[t.id] || blankEntry();
           const preview = buildScore(t.id);
           const total = roundTeamTotal(preview);
-          const bTotal = biribaPoints(preview);
+          const atouTotal = (e.atouDirty || 0) * SCORING.ATOU_DIRTY + (e.atouClean || 0) * SCORING.ATOU_CLEAN;
+          const normalTotal = (e.dirtyBiriba || 0) * SCORING.DIRTY_BIRIBA
+                            + (e.cleanBiriba || 0) * SCORING.CLEAN_BIRIBA
+                            + (e.fullDeckBiriba || 0) * SCORING.FULL_DECK_BIRIBA;
           return (
             <div key={t.id} className="surface rounded p-4 space-y-3">
               <div className="flex items-baseline justify-between gap-2">
@@ -1564,16 +1652,22 @@ function RoundForm({ teams, onCancel, onSubmit, roundNumber, initialScores, edit
                 </span>
               </div>
 
-              <div className="space-y-2 pt-1">
-                <div className="section-label flex items-center justify-between">
-                  <span>biriba</span>
-                  {bTotal > 0 && <span className="stat-num text-sm" style={{ color: "#86EFAC" }}>+{bTotal}</span>}
+              <div className="space-y-3 pt-1">
+                <div className="space-y-1.5">
+                  <GroupLabel name="atou" subtotal={atouTotal} />
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                    <CountTile label="dirty" points={SCORING.ATOU_DIRTY} value={e.atouDirty} onChange={v => set(t.id, "atouDirty", v)} />
+                    <CountTile label="clean" points={SCORING.ATOU_CLEAN} value={e.atouClean} onChange={v => set(t.id, "atouClean", v)} />
+                  </div>
                 </div>
-                <Stepper label="dirty" points={SCORING.DIRTY_BIRIBA} value={e.dirtyBiriba} onChange={v => set(t.id, "dirtyBiriba", v)} />
-                <Stepper label="clean" points={SCORING.CLEAN_BIRIBA} value={e.cleanBiriba} onChange={v => set(t.id, "cleanBiriba", v)} />
-                <Stepper label="atou dirty" points={SCORING.ATOU_DIRTY} value={e.atouDirty} onChange={v => set(t.id, "atouDirty", v)} />
-                <Stepper label="atou clean" points={SCORING.ATOU_CLEAN} value={e.atouClean} onChange={v => set(t.id, "atouClean", v)} />
-                <Stepper label="clean full deck" points={SCORING.FULL_DECK_BIRIBA} value={e.fullDeckBiriba} onChange={v => set(t.id, "fullDeckBiriba", v)} />
+                <div className="space-y-1.5">
+                  <GroupLabel name="normal" subtotal={normalTotal} />
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                    <CountTile label="dirty" points={SCORING.DIRTY_BIRIBA} value={e.dirtyBiriba} onChange={v => set(t.id, "dirtyBiriba", v)} />
+                    <CountTile label="clean" points={SCORING.CLEAN_BIRIBA} value={e.cleanBiriba} onChange={v => set(t.id, "cleanBiriba", v)} />
+                    <CountTile label="full deck" points={SCORING.FULL_DECK_BIRIBA} value={e.fullDeckBiriba} onChange={v => set(t.id, "fullDeckBiriba", v)} />
+                  </div>
+                </div>
               </div>
 
               <div className="flex flex-wrap gap-2 pt-1">
