@@ -8,7 +8,7 @@ export async function GET() {
   if (r) return r;
   const { data: games, error: gErr } = await supabase
     .from("games")
-    .select("id, room_id, name, target_score, teams, seating, shuffle_start, created_at, finished_at")
+    .select("id, room_id, name, target_score, teams, seating, shuffle_start, atou_card, created_at, finished_at")
     .order("created_at", { ascending: false });
   if (gErr) return Response.json({ error: gErr.message }, { status: 500 });
 
@@ -45,6 +45,7 @@ export async function POST(req) {
   if (body.room_id) insert.room_id = body.room_id;
   if (Array.isArray(body.seating)) insert.seating = body.seating;
   if (Number.isFinite(body.shuffle_start)) insert.shuffle_start = body.shuffle_start;
+  if (body.atou_card === null || (body.atou_card && typeof body.atou_card === "object")) insert.atou_card = body.atou_card;
   const { data, error } = await supabase.from("games").insert(insert).select().single();
   if (error) return Response.json({ error: error.message }, { status: 500 });
   return Response.json({ game: { ...data, rounds: [] } });

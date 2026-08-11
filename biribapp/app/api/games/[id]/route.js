@@ -13,6 +13,7 @@ export async function PATCH(req, { params }) {
   if (Array.isArray(body.teams)) update.teams = body.teams;
   if (Array.isArray(body.seating)) update.seating = body.seating;
   if (Number.isFinite(body.shuffle_start)) update.shuffle_start = body.shuffle_start;
+  if (body.atou_card === null || (body.atou_card && typeof body.atou_card === "object")) update.atou_card = body.atou_card;
   if (body.room_id === null || typeof body.room_id === "string") update.room_id = body.room_id;
   if (body.finished_at === null || typeof body.finished_at === "string") {
     update.finished_at = body.finished_at;

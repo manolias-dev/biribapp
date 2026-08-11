@@ -259,3 +259,17 @@ input[type="number"] { -moz-appearance: textfield; }
   .live-dot, .live-dot::after, .live-badge { animation: none; }
   .live-dot::after { display: none; }
 }
+
+/* ---- Deal banner ----
+   Deliberately low-amplitude: a slow opacity breath, no movement or glow, so it
+   draws the eye without competing with the live and restriction badges. */
+@keyframes dealFlash {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+.deal-flash { animation: dealFlash 2.4s ease-in-out infinite; }
+.deal-flash-2 { animation: dealFlash 2.4s ease-in-out infinite; animation-delay: 1.2s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .deal-flash, .deal-flash-2 { animation: none; opacity: 1; }
+}
