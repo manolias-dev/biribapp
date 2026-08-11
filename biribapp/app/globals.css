@@ -273,3 +273,11 @@ input[type="number"] { -moz-appearance: textfield; }
 @media (prefers-reduced-motion: reduce) {
   .deal-flash, .deal-flash-2 { animation: none; opacity: 1; }
 }
+
+/* ---- Seat awaiting a player ---- */
+@keyframes seatSeek {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(244, 205, 92, 0.5); }
+  50%      { box-shadow: 0 0 0 7px rgba(244, 205, 92, 0); }
+}
+.seat-active { animation: seatSeek 1.5s ease-out infinite; }
+@media (prefers-reduced-motion: reduce) { .seat-active { animation: none; } }
