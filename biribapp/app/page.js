@@ -165,18 +165,20 @@ export const SUITS = [
 ];
 function suitOf(id) { return SUITS.find(x => x.id === id) || null; }
 
-/* ---- Shuffle rotation ----
-   `seating` is player ids in clockwise order. By standard card-game convention
-   clockwise means "to the left", so each round the shuffle passes to the next
-   entry in the list, and the splitter is the player to the shuffler's right,
-   i.e. the previous entry. */
+/* ---- Deal rotation ----
+   `seating` holds player ids in table order, matching the on-screen seats, which
+   run clockwise from the top. Seen from above, the next seat clockwise is the one
+   on a player's left.
+
+   The deal passes ANTI-clockwise, so each round it moves back one seat, and the
+   biribákia are split by the player on the dealer's left, i.e. the next seat. */
 function rotationForRound(game, roundNumber) {
   const seating = game?.seating || [];
   const n = seating.length;
   if (n < 2 || !roundNumber || roundNumber < 1) return null;
   const start = Number.isFinite(game.shuffle_start) ? game.shuffle_start : 0;
-  const shufflerIdx = (start + roundNumber - 1) % n;
-  const splitterIdx = (shufflerIdx - 1 + n) % n;
+  const shufflerIdx = (((start - (roundNumber - 1)) % n) + n) % n;
+  const splitterIdx = (shufflerIdx + 1) % n;
   return { shufflerId: seating[shufflerIdx], splitterId: seating[splitterIdx] };
 }
 
@@ -1006,7 +1008,7 @@ function TableSeating({ candidates, seating, setSeating, shuffleStart, setShuffl
   return (
     <div className="surface rounded p-4 space-y-3">
       <div className="flex items-baseline justify-between gap-2">
-        <span className="section-label"><span className="section-prefix">//</span> seating, clockwise</span>
+        <span className="section-label"><span className="section-prefix">//</span> seating</span>
         <div className="flex items-center gap-3">
           <button type="button" onClick={autoSeat}
             className="mono-font text-[10px] uppercase tracking-wider" style={{ color: "rgba(212,175,55,0.85)" }}>
@@ -1075,7 +1077,7 @@ function TableSeating({ candidates, seating, setSeating, shuffleStart, setShuffl
 
       {activeSeat == null ? (
         <div className="mono-font text-[10px] text-center" style={{ color: "rgba(201,185,143,0.5)" }}>
-          {full ? "tap a seat to change who sits there" : "tap a seat, then choose who sits there"}
+          {full ? "tap a seat to change who sits there" : "tap a seat, then choose who sits there — place everyone as they actually sit"}
         </div>
       ) : (
         <div className="space-y-2">
@@ -1142,7 +1144,7 @@ function TableSeating({ candidates, seating, setSeating, shuffleStart, setShuffl
             })}
           </div>
           <div className="mono-font text-[10px]" style={{ color: "rgba(201,185,143,0.45)" }}>
-            the player to their right splits the biribákia
+            the player on their left splits the biribákia · the deal passes anti-clockwise
           </div>
           {partnersOpposite === false && (
             <div className="mono-font text-[10px]" style={{ color: "#F7A356" }}>
