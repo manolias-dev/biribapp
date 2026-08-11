@@ -8,9 +8,10 @@ export async function POST(req, { params }) {
   if (r) return r;
   const body = await req.json().catch(() => ({}));
   const scores = body.scores && typeof body.scores === "object" ? body.scores : {};
+  const meta = body.meta && typeof body.meta === "object" ? body.meta : {};
   const { data, error } = await supabase
     .from("rounds")
-    .insert({ game_id: params.id, scores })
+    .insert({ game_id: params.id, scores, meta })
     .select()
     .single();
   if (error) return Response.json({ error: error.message }, { status: 500 });

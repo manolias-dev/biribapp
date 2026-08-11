@@ -9,6 +9,7 @@ export async function PATCH(req, { params }) {
   const body = await req.json().catch(() => ({}));
   const update = {};
   if (body.scores && typeof body.scores === "object") update.scores = body.scores;
+  if (body.meta && typeof body.meta === "object") update.meta = body.meta;
   update.edited_at = new Date().toISOString();
   const { data, error } = await supabase
     .from("rounds")

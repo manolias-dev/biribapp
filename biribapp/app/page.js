@@ -155,6 +155,31 @@ function CardWatermarks() {
 }
 
 /* ============ SCORING / DATE HELPERS ============ */
+/* ---- Cards ---- */
+export const RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+export const SUITS = [
+  { id: "spades",   sym: "\u2660", name: "spades",   red: false },
+  { id: "hearts",   sym: "\u2665", name: "hearts",   red: true  },
+  { id: "diamonds", sym: "\u2666", name: "diamonds", red: true  },
+  { id: "clubs",    sym: "\u2663", name: "clubs",    red: false },
+];
+function suitOf(id) { return SUITS.find(x => x.id === id) || null; }
+
+/* ---- Shuffle rotation ----
+   `seating` is player ids in clockwise order. By standard card-game convention
+   clockwise means "to the left", so each round the shuffle passes to the next
+   entry in the list, and the splitter is the player to the shuffler's right,
+   i.e. the previous entry. */
+function rotationForRound(game, roundNumber) {
+  const seating = game?.seating || [];
+  const n = seating.length;
+  if (n < 2 || !roundNumber || roundNumber < 1) return null;
+  const start = Number.isFinite(game.shuffle_start) ? game.shuffle_start : 0;
+  const shufflerIdx = (start + roundNumber - 1) % n;
+  const splitterIdx = (shufflerIdx - 1 + n) % n;
+  return { shufflerId: seating[shufflerIdx], splitterId: seating[splitterIdx] };
+}
+
 /* ---- Biriba scoring rules ---- */
 export const SCORING = {
   DIRTY_BIRIBA: 100,
@@ -798,6 +823,188 @@ function AppFooter() {
   );
 }
 
+/* Mini playing-card face, used to show the chosen atou. */
+function CardFace({ rank, suit, size = "md" }) {
+  const st = suitOf(suit);
+  if (!rank || !st) return null;
+  const dims = size === "sm" ? { w: 26, h: 36, r: 11, s: 11 } : { w: 44, h: 62, r: 17, s: 18 };
+  const ink = st.red ? "#E4636F" : "#0A2818";
+  return (
+    <span className="inline-flex flex-col items-center justify-center rounded flex-shrink-0"
+      style={{ width: dims.w, height: dims.h, background: "#F5E9CF", border: "1px solid #D4AF37", lineHeight: 1 }}>
+      <span style={{ fontFamily: "'Geist', system-ui, sans-serif", fontWeight: 600, fontSize: dims.r, color: ink }}>{rank}</span>
+      <span style={{ fontFamily: "serif", fontSize: dims.s, color: ink }}>{st.sym}</span>
+    </span>
+  );
+}
+
+/* Two-step atou picker: rank first, then suit. */
+function AtouPicker({ rank, suit, onChange }) {
+  return (
+    <div className="space-y-2.5">
+      <div className="flex items-center justify-between">
+        <span className="section-label"><span className="section-prefix">//</span> atou card</span>
+        {(rank || suit) && (
+          <button type="button" onClick={() => onChange(null, null)}
+            className="mono-font text-[10px] uppercase tracking-wider" style={{ color: "rgba(201,185,143,0.5)" }}>
+            clear
+          </button>
+        )}
+      </div>
+
+      <div className="flex items-center gap-3">
+        {rank && suit ? (
+          <CardFace rank={rank} suit={suit} />
+        ) : (
+          <span className="inline-flex items-center justify-center rounded flex-shrink-0 mono-font text-[9px] uppercase tracking-wider text-center px-1"
+            style={{ width: 44, height: 62, border: "1px dashed rgba(212,175,55,0.4)", color: "rgba(201,185,143,0.4)" }}>
+            not set
+          </span>
+        )}
+        <div className="flex-1 space-y-2">
+          <div className="flex flex-wrap gap-1">
+            {RANKS.map(r => (
+              <button key={r} type="button" onClick={() => onChange(r, suit)}
+                className={`mono-font text-[11px] font-semibold rounded ${rank === r ? "chip-active" : "chip"}`}
+                style={{ minWidth: 30, height: 30 }}>
+                {r}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-1.5">
+            {SUITS.map(st => (
+              <button key={st.id} type="button" onClick={() => onChange(rank, st.id)}
+                className={`rounded flex items-center justify-center ${suit === st.id ? "chip-active" : "chip"}`}
+                style={{ width: 38, height: 32, fontFamily: "serif", fontSize: 17, color: st.red ? "#E4636F" : "#F5E9CF" }}
+                aria-label={st.name}>
+                {st.sym}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* Who shuffles and who splits, for the round about to be played. */
+function RotationPanel({ game, roundNumber, players }) {
+  const rot = rotationForRound(game, roundNumber);
+  if (!rot) return null;
+  const shuffler = players.find(p => p.id === rot.shufflerId);
+  const splitter = players.find(p => p.id === rot.splitterId);
+  if (!shuffler && !splitter) return null;
+  return (
+    <div className="surface rounded p-3.5">
+      <div className="section-label mb-2.5"><span className="section-prefix">//</span> round {roundNumber} deal</div>
+      <div className="flex items-center gap-3 flex-wrap">
+        {shuffler && (
+          <div className="flex items-center gap-2">
+            <Avatar player={shuffler} size={30} />
+            <div className="leading-tight">
+              <div className="ui-font text-sm font-medium" style={{ color: "#F5E9CF" }}>{shuffler.name}</div>
+              <div className="mono-font text-[9px] uppercase tracking-wider" style={{ color: "#F4CD5C" }}>shuffles</div>
+            </div>
+          </div>
+        )}
+        {splitter && (
+          <>
+            <span style={{ color: "rgba(212,175,55,0.4)" }}>\u2192</span>
+            <div className="flex items-center gap-2">
+              <Avatar player={splitter} size={30} />
+              <div className="leading-tight">
+                <div className="ui-font text-sm font-medium" style={{ color: "#F5E9CF" }}>{splitter.name}</div>
+                <div className="mono-font text-[9px] uppercase tracking-wider" style={{ color: "rgba(201,185,143,0.6)" }}>splits</div>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* Build the clockwise seating order by tapping players in turn, then choose
+   who shuffles first. */
+function SeatingSetup({ candidates, seating, setSeating, shuffleStart, setShuffleStart }) {
+  const seated = seating.map(id => candidates.find(p => p.id === id)).filter(Boolean);
+  const unseated = candidates.filter(p => !seating.includes(p.id));
+
+  return (
+    <div className="surface rounded p-4 space-y-3">
+      <div className="flex items-baseline justify-between">
+        <span className="section-label"><span className="section-prefix">//</span> seating, clockwise</span>
+        {seating.length > 0 && (
+          <button type="button" onClick={() => { setSeating([]); setShuffleStart(0); }}
+            className="mono-font text-[10px] uppercase tracking-wider" style={{ color: "rgba(201,185,143,0.5)" }}>
+            reset
+          </button>
+        )}
+      </div>
+
+      {candidates.length === 0 ? (
+        <div className="mono-font text-[11px] italic" style={{ color: "rgba(201,185,143,0.5)" }}>
+          add teams with members first
+        </div>
+      ) : (
+        <>
+          {unseated.length > 0 && (
+            <div className="space-y-1.5">
+              <div className="mono-font text-[10px]" style={{ color: "rgba(201,185,143,0.5)" }}>
+                tap in the order they sit, going clockwise
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {unseated.map(p => (
+                  <button key={p.id} type="button" onClick={() => setSeating([...seating, p.id])}
+                    className="chip ui-font text-xs px-2.5 py-1.5 rounded-full flex items-center gap-1.5 font-medium">
+                    <Avatar player={p} size={20} />{p.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {seated.length > 0 && (
+            <div className="space-y-2">
+              <div className="space-y-1.5">
+                {seated.map((p, i) => (
+                  <div key={p.id} className="flex items-center gap-2.5">
+                    <span className="stat-num text-sm w-4 text-center" style={{ color: "rgba(201,185,143,0.45)" }}>{i + 1}</span>
+                    <Avatar player={p} size={26} />
+                    <span className="ui-font text-sm flex-1 min-w-0 truncate" style={{ color: "#F5E9CF" }}>{p.name}</span>
+                    <button type="button" onClick={() => setSeating(seating.filter(x => x !== p.id))}
+                      className="p-1" style={{ color: "rgba(201,185,143,0.4)" }} aria-label={`remove ${p.name}`}>
+                      <X size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {seated.length >= 2 && (
+                <div className="space-y-1.5 pt-1">
+                  <div className="section-label">who shuffles first?</div>
+                  <div className="flex flex-wrap gap-2">
+                    {seated.map((p, i) => (
+                      <button key={p.id} type="button" onClick={() => setShuffleStart(i)}
+                        className={`ui-font text-xs px-2.5 py-1.5 rounded-full flex items-center gap-1.5 font-medium ${shuffleStart === i ? "chip-active" : "chip"}`}>
+                        <Avatar player={p} size={18} />{p.name}
+                        {shuffleStart === i && <Check size={10} />}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mono-font text-[10px]" style={{ color: "rgba(201,185,143,0.45)" }}>
+                    the player to their right splits the birib\u00e1kia
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ============ HOME ============ */
 function HomeView({ players, rooms, games, setView, setSelectedRoomId, setCurrentGameId, setSelectedGameId }) {
   const openRooms = rooms.filter(r => !r.closed_at);
@@ -1244,6 +1451,23 @@ function NewGameView({ room, players, teams, games, setTeams, setGames, setCurre
   const [target, setTarget] = useState(room?.default_target_score || 3000);
   const [selected, setSelected] = useState(roomDefaults.map(t => ({ id: t.id, name: t.name, member_ids: t.member_ids || [] })));
   const [starting, setStarting] = useState(false);
+  const [seating, setSeating] = useState([]);
+  const [shuffleStart, setShuffleStart] = useState(0);
+
+  // Everyone who belongs to a team in this game is a candidate for a seat.
+  const seatCandidates = [];
+  for (const t of selected) {
+    for (const id of (t.member_ids || [])) {
+      if (!seatCandidates.some(p => p.id === id)) {
+        const p = players.find(x => x.id === id);
+        if (p) seatCandidates.push(p);
+      }
+    }
+  }
+
+  // If teams change after seats were assigned, ignore seats for players who
+  // are no longer in the lineup rather than mutating state mid-render.
+  const validSeating = seating.filter(id => seatCandidates.some(p => p.id === id));
 
   async function start() {
     const gameName = name.trim() || suggestedName || "Game";
@@ -1255,6 +1479,8 @@ function NewGameView({ room, players, teams, games, setTeams, setGames, setCurre
         name: gameName,
         target_score: Number(target) || 3000,
         teams: selected.map(t => ({ id: t.id, name: t.name, member_ids: t.member_ids || [] })),
+        seating: validSeating,
+        shuffle_start: validSeating.length >= 2 ? Math.min(shuffleStart, validSeating.length - 1) : 0,
       });
       setGames(prev => [r.game, ...prev]);
       setCurrentGameId(r.game.id);
@@ -1293,6 +1519,11 @@ function NewGameView({ room, players, teams, games, setTeams, setGames, setCurre
         )}
         <TeamPicker players={players} teams={teams} selected={selected} setSelected={setSelected} setTeams={setTeams} handleErr={handleErr} />
       </div>
+
+      {seatCandidates.length >= 2 && (
+        <SeatingSetup candidates={seatCandidates} seating={validSeating} setSeating={setSeating}
+          shuffleStart={shuffleStart} setShuffleStart={setShuffleStart} />
+      )}
 
       <button onClick={start} disabled={selected.length < 2 || starting} className="btn-gold mono-font w-full py-4 rounded text-sm font-semibold uppercase tracking-[0.18em]">
         {starting ? "dealing..." : "begin game →"}
@@ -1471,6 +1702,8 @@ function GameView({ game, rooms, setGames, setView, setSelectedRoomId, players, 
 
       {!game.finished_at && (
         <>
+          <RotationPanel game={game} roundNumber={(game.rounds?.length || 0) + 1} players={players} />
+
           {!showRoundForm && !editingRoundId ? (
             <button onClick={() => setShowRoundForm(true)} className="btn-gold mono-font w-full py-4 rounded text-sm font-semibold uppercase tracking-[0.18em]">
               <Plus size={15} className="inline mr-2" />record round {(game.rounds?.length || 0) + 1}
@@ -1497,7 +1730,7 @@ function GameView({ game, rooms, setGames, setView, setSelectedRoomId, players, 
             {[...(game.rounds || [])].reverse().map((r, idx) => {
               const roundNum = game.rounds.length - idx;
               if (editingRoundId === r.id) {
-                return <RoundForm key={r.id} teams={game.teams} initialScores={r.scores} onCancel={() => setEditingRoundId(null)} onSubmit={(data) => updateRound(r.id, data)} roundNumber={roundNum} editing />;
+                return <RoundForm key={r.id} teams={game.teams} initialScores={r.scores} initialMeta={r.meta} onCancel={() => setEditingRoundId(null)} onSubmit={(data) => updateRound(r.id, data)} roundNumber={roundNum} editing />;
               }
               return (
                 <div key={r.id} className="surface p-4 rounded">
@@ -1505,6 +1738,7 @@ function GameView({ game, rooms, setGames, setView, setSelectedRoomId, players, 
                     <div className="flex items-center gap-2">
                       <div className="stat-num text-xl gold-text-bright">{roundNum}</div>
                       <div className="section-label">round {r.edited_at && <span style={{ color: "rgba(201,185,143,0.4)" }}>· edited</span>}</div>
+                      {r.meta?.atouCard && <CardFace rank={r.meta.atouCard.rank} suit={r.meta.atouCard.suit} size="sm" />}
                     </div>
                     {!game.finished_at && (
                       <div className="flex items-center gap-1">
@@ -1627,13 +1861,15 @@ function GroupLabel({ name, subtotal }) {
   );
 }
 
-function RoundForm({ teams, onCancel, onSubmit, roundNumber, initialScores, editing }) {
+function RoundForm({ teams, onCancel, onSubmit, roundNumber, initialScores, initialMeta, editing }) {
   const list = teams || [];
   const [entries, setEntries] = useState(() => {
     const init = {};
     list.forEach(t => { init[t.id] = entryFromScore(initialScores?.[t.id]); });
     return init;
   });
+  const [atouRank, setAtouRank] = useState(initialMeta?.atouCard?.rank || null);
+  const [atouSuit, setAtouSuit] = useState(initialMeta?.atouCard?.suit || null);
   // Only one team goes out first; null means nobody did.
   const [outFirstId, setOutFirstId] = useState(() => {
     const found = list.find(t => initialScores?.[t.id]?.outFirst);
@@ -1671,7 +1907,9 @@ function RoundForm({ teams, onCancel, onSubmit, roundNumber, initialScores, edit
   function submit() {
     const cleaned = {};
     list.forEach(t => { cleaned[t.id] = buildScore(t.id); });
-    onSubmit({ scores: cleaned });
+    const meta = {};
+    if (atouRank && atouSuit) meta.atouCard = { rank: atouRank, suit: atouSuit };
+    onSubmit({ scores: cleaned, meta });
   }
 
   return (
@@ -1680,6 +1918,9 @@ function RoundForm({ teams, onCancel, onSubmit, roundNumber, initialScores, edit
         <div className="section-label">// round {roundNumber}</div>
         <div className="display-font text-3xl mt-1" style={{ color: "#F5E9CF" }}>{editing ? "edit scores" : "enter scores"}</div>
       </div>
+
+      <AtouPicker rank={atouRank} suit={atouSuit}
+        onChange={(r, su) => { setAtouRank(r); setAtouSuit(su); }} />
 
       {/* Out-first is a round-level choice, so it lives outside the team cards */}
       <div className="space-y-2">

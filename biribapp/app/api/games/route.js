@@ -8,7 +8,7 @@ export async function GET() {
   if (r) return r;
   const { data: games, error: gErr } = await supabase
     .from("games")
-    .select("id, room_id, name, target_score, teams, created_at, finished_at")
+    .select("id, room_id, name, target_score, teams, seating, shuffle_start, created_at, finished_at")
     .order("created_at", { ascending: false });
   if (gErr) return Response.json({ error: gErr.message }, { status: 500 });
 
@@ -17,7 +17,7 @@ export async function GET() {
   if (ids.length > 0) {
     const { data: rounds, error: rErr } = await supabase
       .from("rounds")
-      .select("id, game_id, scores, edited_at, at")
+      .select("id, game_id, scores, meta, edited_at, at")
       .in("game_id", ids)
       .order("at", { ascending: true });
     if (rErr) return Response.json({ error: rErr.message }, { status: 500 });
@@ -43,6 +43,8 @@ export async function POST(req) {
     teams: Array.isArray(body.teams) ? body.teams : [],
   };
   if (body.room_id) insert.room_id = body.room_id;
+  if (Array.isArray(body.seating)) insert.seating = body.seating;
+  if (Number.isFinite(body.shuffle_start)) insert.shuffle_start = body.shuffle_start;
   const { data, error } = await supabase.from("games").insert(insert).select().single();
   if (error) return Response.json({ error: error.message }, { status: 500 });
   return Response.json({ game: { ...data, rounds: [] } });
